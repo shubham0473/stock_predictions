@@ -10,10 +10,12 @@ import sys
 from collections import deque
 
 import tensorflow as tf
-from tensorflow.models.rnn import rnn
-from tensorflow.models.rnn import rnn_cell
-from tensorflow.models.rnn import seq2seq
-
+#from tensorflow.models.nn import rnn
+#from tf.nn.rnn_cell import rnn_cell
+#from tensorflow.models.rnn import seq2seq
+#import tf.nn.rnn_cell as rnn_cell
+#import tf.nn.rnn as rnn
+#import tf.nn.rnn_seq2seq as seq2seq
 import config as c
 
 """
@@ -52,7 +54,9 @@ def get_data():
         cumusplit = [np.sum(split[:i]) for i,s in enumerate(split)]
         segment_start_dates = [c.start + timedelta(
             days = int((c.end - c.start).days * interv)) for interv in cumusplit][::-1]
+        # print segment_start_dates
         stocks_list = map(lambda l: l.strip(), open(c.names_file, 'r').readlines())
+        # print(stocks_list[0])
         by_stock = dict((s, pdr_data.DataReader(s, 'yahoo', c.start, c.end))
                 for s in stocks_list)
         seq = [[],[],[]]
@@ -72,7 +76,7 @@ def get_data():
                 except KeyError:
                     pass
         return [np.asarray(dat, dtype=np.float32) for dat in seq][::-1]
-    
+
     if not os.path.exists(c.save_file):
         datasets = download_data()
         print('Saving in {}'.format(c.save_file))
@@ -112,7 +116,7 @@ def seq_iterator(raw_data, batch_size, num_steps):
     for i in range(epoch_size):
         x = data[:, i*num_steps:(i+1)*num_steps]
         y = data[:, i*num_steps+1:(i+1)*num_steps+1]
-        yield (x, y) 
+        yield (x, y)
 
 class StockLSTM(object):
     """
@@ -129,10 +133,10 @@ class StockLSTM(object):
         self._input_data = tf.placeholder(tf.float32, [batch_size, num_steps])
         self._targets = tf.placeholder(tf.float32, [batch_size, num_steps])
 
-        lstm_cell = rnn_cell.BasicLSTMCell(size, forget_bias=0.0)
+        lstm_cell = tf.nn.rnn_cell.BasicLSTMCell(size, forget_bias=0.0)
         if is_training and config.keep_prob < 1:
-            lstm_cell = rnn_cell.DropoutWrapper(lstm_cell, output_keep_prob=config.keep_prob)
-        cell = rnn_cell.MultiRNNCell([lstm_cell] * config.num_layers)
+            lstm_cell = tf.nn.rnn_cell.DropoutWrapper(lstm_cell, output_keep_prob=config.keep_prob)
+        cell = tf.nn.rnn_cell.MultiRNNCell([lstm_cell] * config.num_layers)
 
         self._initial_state = cell.zero_state(batch_size, tf.float32)
 
@@ -142,7 +146,7 @@ class StockLSTM(object):
         if is_training and config.keep_prob < 1:
             inputs = [tf.nn.dropout(input_, config.keep_prob) for input_ in inputs]
 
-        outputs, states = rnn.rnn(cell, inputs, initial_state=self._initial_state)
+        outputs, states = tf.nn.rnn(cell, inputs, initial_state=self._initial_state)
         rnn_output = tf.reshape(tf.concat(1, outputs), [-1, size])
 
         self._output = output = tf.nn.xw_plus_b(rnn_output,
@@ -180,7 +184,7 @@ class StockLSTM(object):
     @property
     def cost(self):
         return self._cost
-    
+
     @property
     def output(self):
         return self._output
@@ -196,10 +200,10 @@ class StockLSTM(object):
     @property
     def train_op(self):
         return self._train_op
-    
+
 
 def main(config_size='small', num_epochs=10):
-    
+
     def get_config(config_size):
         config_size = config_size.lower()
         if config_size == 'small':
@@ -218,10 +222,11 @@ def main(config_size='small', num_epochs=10):
         start_time = time.time()
         costs = 0.0
         iters = 0
-        state = m.initial_state.eval()
+        state = m.initial_state
+        # print(list(m.initial_state))
         for step, (x, y) in enumerate(seq_iterator(data, m.batch_size, m.num_steps)):
             cost, state, _ = session.run([m.cost, m.final_state, eval_op],
-                             {m.input_data: x, m.targets: y, m.initial_state: state})
+                             {m.input_data: x, m.targets: y})
             costs += cost
             iters += m.num_steps
 
